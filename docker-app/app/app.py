@@ -2,8 +2,9 @@ import os
 import socket
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
-from dash import Dash, html, dcc
+from dash import Dash, html, dcc, Input, Output, callback
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -12,6 +13,7 @@ import pandas as pd
 import numpy as np
 import psycopg2
 import psycopg2.extras as extras
+from flask import Flask
 
 
 def to_array(data):
@@ -23,10 +25,11 @@ def to_array(data):
 def query_esp32(UDP_IP):
     SHARED_UDP_PORT = 4210
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Internet  # UDP
-    sock.settimeout(10)
+    sock.settimeout(1)
     sock.connect((UDP_IP, SHARED_UDP_PORT))
 
     sock.send("Hello ESP32".encode())
+    print("Querying esp32", flush=True)
     for j in range(30):
         try:
             recv = sock.recv(2**16)
@@ -35,10 +38,9 @@ def query_esp32(UDP_IP):
             break
         except TimeoutError:
             time.sleep(5)
-            print("Trying again...")
+            print("Trying again...", flush=True)
 
-    print(recv)
-    print(len(recv))
+    print("Recieved", flush=True)
     recv_list = recv.decode("utf-8").split(";")
     date = recv_list[0]
     temps = to_array(recv_list[1])
@@ -131,13 +133,15 @@ def select_from(table):
         print(error)
 
 
+server = Flask(__name__)
+app = Dash(server=server)
+
 debug = False if os.environ["DASH_DEBUG_MODE"] == "False" else True
 
 colors = {"background": "#111111", "text": "#7FDBFF"}
 
-app = Dash(__name__)
-
-server = app.server
+# app = Dash(__name__)
+# server = app.server
 
 data = pd.DataFrame(
     {
@@ -199,18 +203,32 @@ app.layout = html.Div(
             children=f"Hello Dash in 2022 from {'Dev Server' if debug else 'Prod Server'}",
             style={"textAlign": "center", "color": colors["text"]},
         ),
-        html.Div(children="""Dash: A web application framework for your data."""),
+        html.Div(id="live-update-text"),
         dcc.Graph(id="temperature", figure=temperature),
         dcc.Graph(id="humidity", figure=humidity),
+        dcc.Interval(
+            id="interval-component",
+            interval=int(3.6e4),  # in milliseconds
+            n_intervals=0,
+        ),
     ],
 )
 
 
-UDP_IP = "10.0.0.83"  # Printed IP from the ESP32 serial monitor
-adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
-bulk_insert("inside", adjusted_datetimes, temps, hums)
-select_from("inside")
+@callback(
+    Output("live-update-text", "children"),
+    Input("interval-component", "n_intervals"),
+)
+def update_metrics(n):
+    UDP_IP = "10.0.0.83"  # Printed IP from the ESP32 serial monitor
+    adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
+    bulk_insert("inside", adjusted_datetimes, temps, hums)
+    select_from("inside")
+
+    style = {"padding": "5px", "fontSize": "16px", "color": colors["text"]}
+    dttz = datetime.now(ZoneInfo("America/Vancouver"))
+    return html.Span(f"Last pulled data at: {dttz}", style=style)
 
 
 if __name__ == "__main__":
-    app.run(host="localhost", port="8050", debug=debug)
+    app.run(host="0.0.0.0", port="8050", debug=debug)
