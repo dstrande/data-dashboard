@@ -22,16 +22,20 @@ def to_array(data):
     return data
 
 
+def to_timezone(dtime):
+    return dtime.astimezone(ZoneInfo("America/Vancouver"))
+
+
 def query_esp32(UDP_IP):
     SHARED_UDP_PORT = 4210
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Internet  # UDP
-    sock.settimeout(1)
+    sock.settimeout(5)
     sock.connect((UDP_IP, SHARED_UDP_PORT))
 
-    sock.send("Hello ESP32".encode())
     print("Querying esp32", flush=True)
     for j in range(30):
         try:
+            sock.send("Hello ESP32".encode())
             recv = sock.recv(2**16)
             for i in range(7):
                 recv += sock.recv(2**16)
@@ -40,26 +44,28 @@ def query_esp32(UDP_IP):
             time.sleep(5)
             print("Trying again...", flush=True)
 
-    print("Recieved", flush=True)
+    print("Recieved length: ", len(recv), flush=True)
     recv_list = recv.decode("utf-8").split(";")
     date = recv_list[0]
     temps = to_array(recv_list[1])
     hums = to_array(recv_list[2])
     times = to_array(recv_list[3])
+    print("Ard times: ", date, times)
 
     lengths = np.array([temps.shape[0], hums.shape[0], times.shape[0]])
     if (lengths == lengths[0]).all() and (temps.shape[0] > 0):
-        print(temps.shape[0], hums.shape[0], times.shape[0])
         sock.send("Received data".encode())
 
     stop_time = str(date).split(" ")
     stop_datetime = stop_time[1] + " " + stop_time[2]
     datetime_obj = datetime.strptime(stop_datetime, "%Y%m%d %H:%M:%S")
 
-    adjusted_times = times[-1] - times
+    adjusted_times = times - times[-1]
+    print("Adj times: ", adjusted_times, times)
     adjusted_datetimes = [
         datetime_obj + timedelta(seconds=int(diff)) for diff in adjusted_times
     ]
+    print("Adj datetimes: ", adjusted_datetimes, flush=True)
 
     return adjusted_datetimes, temps, hums
 
@@ -96,7 +102,9 @@ def bulk_insert(table, adjusted_datetimes, temps, hums):
         "temperature": temps,
         "humidity": hums,
     }
-    df = pd.DataFrame(df)
+    df = pd.DataFrame(df)  # .iloc[::-1]
+    df["times"] = df["times"].dt.tz_localize("utc")
+    df["times"] = df["times"].apply(to_timezone)
 
     try:
         with psycopg2.connect(creds) as conn:
@@ -133,16 +141,28 @@ def select_from(table):
         print(error)
 
 
+@callback(
+    Output("live-update-text", "children"),
+    Input("interval-component", "n_intervals"),
+)
+def update_metrics(n):
+    UDP_IP = "10.0.0.83"  # Printed IP from the ESP32 serial monitor
+    adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
+    bulk_insert("inside", adjusted_datetimes, temps, hums)
+    select_from("inside")
+
+    style = {"padding": "5px", "fontSize": "16px", "color": colors["text"]}
+    dttz = datetime.now(ZoneInfo("America/Vancouver"))
+    print("Adj timez: ", dttz, "\n\n", flush=True)
+    return html.Span(f"Last pulled data at: {dttz}", style=style)
+
+
 server = Flask(__name__)
 app = Dash(server=server)
 
 debug = False if os.environ["DASH_DEBUG_MODE"] == "False" else True
 
 colors = {"background": "#111111", "text": "#7FDBFF"}
-
-# app = Dash(__name__)
-# server = app.server
-
 data = pd.DataFrame(
     {
         "Outside Temperature": [
@@ -188,7 +208,6 @@ temperature.update_layout(
     font_color=colors["text"],
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
 )
-
 humidity.update_layout(
     plot_bgcolor=colors["background"],
     paper_bgcolor=colors["background"],
@@ -208,26 +227,11 @@ app.layout = html.Div(
         dcc.Graph(id="humidity", figure=humidity),
         dcc.Interval(
             id="interval-component",
-            interval=int(3.6e4),  # in milliseconds
+            interval=300 * 1000,  # in milliseconds
             n_intervals=0,
         ),
     ],
 )
-
-
-@callback(
-    Output("live-update-text", "children"),
-    Input("interval-component", "n_intervals"),
-)
-def update_metrics(n):
-    UDP_IP = "10.0.0.83"  # Printed IP from the ESP32 serial monitor
-    adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
-    bulk_insert("inside", adjusted_datetimes, temps, hums)
-    select_from("inside")
-
-    style = {"padding": "5px", "fontSize": "16px", "color": colors["text"]}
-    dttz = datetime.now(ZoneInfo("America/Vancouver"))
-    return html.Span(f"Last pulled data at: {dttz}", style=style)
 
 
 if __name__ == "__main__":

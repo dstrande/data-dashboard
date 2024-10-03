@@ -21,9 +21,9 @@ float temp; //Stores temperature value
 float i;
 unsigned long time_begin;
 unsigned long time_end;
-const unsigned long loop_time = 5;
+const unsigned long loop_time = 30;
 const unsigned long trans_time = 10;
-const unsigned long day = 10; // 86400
+const unsigned long day = 300; // 86400
 unsigned long time1;
 unsigned long time0;
 String temps, hums, times, toSend;
@@ -121,7 +121,7 @@ void loop()
         Serial.println("Connected to wifi");
         Udp.begin(localUdpPort);
         Serial.printf("Now listening at IP %s, UDP port %d\n", WiFi.localIP().toString().c_str(), localUdpPort);
-        configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+        configTime(0, 0, ntpServer);
       }
     }
 
@@ -160,7 +160,7 @@ void loop()
 
         bool read2Packet = false;
         i = 0.0;
-        while (i < 100000.0) {
+        while (i < 1000000.0) {
           i += 1.0;
           int packet2Size = Udp.parsePacket();
           if (packet2Size){
@@ -179,7 +179,7 @@ void loop()
 
           if (read2Packet) {
             digitalWrite(LED_BUILTIN, LOW);   // turn the LED off by making the voltage LOW
-            i = 100001.0;
+            i = 1000001.0;
             WiFi.disconnect(true);
             WiFi.mode(WIFI_OFF);
             Udp.stop();
