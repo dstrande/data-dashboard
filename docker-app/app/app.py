@@ -17,31 +17,79 @@ from flask import Flask
 
 
 def to_array(data):
+    """Converts the data from string format to an array.
+
+    Removes the first an last characters of the string and converts to float.
+
+    Parameters
+    ----------
+    data : str
+        Partial string from esp32 containing comma separated 1d data.
+
+    Returns
+    -------
+    data : array
+        Data from esp32 now in a 1d array.
+    """
     data = data.split(",")
     data = np.array(data[1:-1]).astype(float)
     return data
 
 
 def to_timezone(dtime):
+    """Converts UTC to Vancouver timezone.
+
+    Should account for daylight savings as well.
+
+    Parameters
+    ----------
+    dtime : datetime
+        Datetime in UTC.
+
+    Returns
+    -------
+    datetime
+        Datetime in Vancouver timezone (-7 or -8).
+    """
     return dtime.astimezone(ZoneInfo("America/Vancouver"))
 
 
 def query_esp32(UDP_IP):
+    """Queries the specified esp32 logger and returns formatted data.
+
+    Converts time from seconds into datetime using the supplied datetime which
+    corresponds to the final measurement. Returns data as 3 arrays.
+
+    Parameters
+    ----------
+    UDP_IP : str
+        The IP of the esp32 temperature logger.
+
+    Returns
+    -------
+    adjusted_datetimes : array
+        Datetime array for each measurement containing timezone information.
+    temps : array
+        Array of measured temperatures (Celsius).
+    hums : array
+        Array of measured humidities (%).
+    """
     SHARED_UDP_PORT = 4210
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Internet  # UDP
     sock.settimeout(5)
     sock.connect((UDP_IP, SHARED_UDP_PORT))
 
     print("Querying esp32", flush=True)
-    for j in range(30):
+    received = False
+    while received is False:
         try:
             sock.send("Hello ESP32".encode())
             recv = sock.recv(2**16)
             for i in range(7):
                 recv += sock.recv(2**16)
-            break
+            received = True
         except TimeoutError:
-            time.sleep(5)
+            time.sleep(1)
             print("Trying again...", flush=True)
 
     print("Recieved length: ", len(recv), flush=True)
@@ -50,7 +98,6 @@ def query_esp32(UDP_IP):
     temps = to_array(recv_list[1])
     hums = to_array(recv_list[2])
     times = to_array(recv_list[3])
-    print("Ard times: ", date, times)
 
     lengths = np.array([temps.shape[0], hums.shape[0], times.shape[0]])
     if (lengths == lengths[0]).all() and (temps.shape[0] > 0):
@@ -61,11 +108,9 @@ def query_esp32(UDP_IP):
     datetime_obj = datetime.strptime(stop_datetime, "%Y%m%d %H:%M:%S")
 
     adjusted_times = times - times[-1]
-    print("Adj times: ", adjusted_times, times)
     adjusted_datetimes = [
         datetime_obj + timedelta(seconds=int(diff)) for diff in adjusted_times
     ]
-    print("Adj datetimes: ", adjusted_datetimes, flush=True)
 
     return adjusted_datetimes, temps, hums
 
@@ -103,8 +148,7 @@ def bulk_insert(table, adjusted_datetimes, temps, hums):
         "humidity": hums,
     }
     df = pd.DataFrame(df)  # .iloc[::-1]
-    df["times"] = df["times"].dt.tz_localize("utc")
-    df["times"] = df["times"].apply(to_timezone)
+    df["times"] = df["times"].dt.tz_localize("utc").apply(to_timezone)
 
     try:
         with psycopg2.connect(creds) as conn:
@@ -114,7 +158,7 @@ def bulk_insert(table, adjusted_datetimes, temps, hums):
                 # Comma-separated dataframe columns
                 cols = ",".join(list(df.columns))
                 # SQL quert to execute
-                query = "INSERT INTO %s(%s) VALUES(%%s,%%s,%%s)" % ("inside", cols)
+                query = "INSERT INTO %s(%s) VALUES(%%s,%%s,%%s)" % (table, cols)
                 try:
                     extras.execute_batch(cur, query, tuples, 100)
                     conn.commit()
@@ -134,11 +178,14 @@ def select_from(table):
         with psycopg2.connect(creds) as conn:
             with conn.cursor() as cur:
                 # execute the CREATE TABLE statement
-                cur.execute(f"SELECT * FROM {table}")
+                cur.execute(f"""SELECT * FROM {table}
+                            WHERE times > CURRENT_DATE - INTERVAL '14 day';""")
                 results = pd.DataFrame(cur.fetchall())
                 print("results: ", results)
     except (psycopg2.DatabaseError, Exception) as error:
         print(error)
+
+    return results[1], results[2], results[3]
 
 
 @callback(
@@ -146,15 +193,77 @@ def select_from(table):
     Input("interval-component", "n_intervals"),
 )
 def update_metrics(n):
-    UDP_IP = "10.0.0.83"  # Printed IP from the ESP32 serial monitor
+    UDP_IP = "10.0.0.83"  # Printed IP from the ESP32 serial monitor for inside
     adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
     bulk_insert("inside", adjusted_datetimes, temps, hums)
-    select_from("inside")
 
     style = {"padding": "5px", "fontSize": "16px", "color": colors["text"]}
     dttz = datetime.now(ZoneInfo("America/Vancouver"))
     print("Adj timez: ", dttz, "\n\n", flush=True)
     return html.Span(f"Last pulled data at: {dttz}", style=style)
+
+
+@callback(
+    Output("plots", "figure"),
+    Input("interval-component", "n_intervals"),
+)
+def update_data(n):
+    datetimes_inside, temps_inside, hums_inside = select_from("inside")
+
+    fig = make_subplots(rows=2, cols=1)
+
+    fig.add_trace(
+        row=1,
+        col=1,
+        trace=go.Scatter(
+            x=datetimes_inside,
+            y=temps_inside,
+            name="Inside Temperature",
+            mode="lines+markers",
+        ),
+    )
+    fig.add_trace(
+        row=1,
+        col=1,
+        trace=go.Scatter(
+            x=datetimes_inside,
+            y=temps_inside - 1,
+            name="Outside Temperature",
+            mode="lines+markers",
+        ),
+    )
+
+    fig.add_trace(
+        row=2,
+        col=1,
+        trace=go.Scatter(
+            x=datetimes_inside,
+            y=hums_inside - 1,
+            name="Inside Humidity",
+            mode="lines+markers",
+        ),
+    )
+    fig.add_trace(
+        row=2,
+        col=1,
+        trace=go.Scatter(
+            x=datetimes_inside,
+            y=hums_inside + 10,
+            name="Outside Humidity",
+            mode="lines+markers",
+        ),
+    )
+
+    fig.update_yaxes(title_text="Temperature (°C)", row=1, col=1)
+    fig.update_yaxes(title_text="Humidity (%)", range=[0, 100], row=2, col=1)
+    fig.update_xaxes(title_text="Datetime", row=2, col=1)
+    fig.update_layout(
+        height=1000,
+        template="plotly_dark",
+        margin=dict(t=10, l=10, b=10, r=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    return fig
 
 
 server = Flask(__name__)
@@ -163,71 +272,19 @@ app = Dash(server=server)
 debug = False if os.environ["DASH_DEBUG_MODE"] == "False" else True
 
 colors = {"background": "#111111", "text": "#7FDBFF"}
-data = pd.DataFrame(
-    {
-        "Outside Temperature": [
-            21.5,
-            21.5,
-            21.5,
-            21.5,
-            21.5,
-            21.5,
-            21.5,
-            21.5,
-            21.5,
-            21.5,
-        ],
-        "Inside Temperature": [
-            22.5,
-            22.5,
-            22.5,
-            22.5,
-            22.5,
-            22.5,
-            22.5,
-            22.5,
-            22.5,
-            22.5,
-        ],
-        "Outside Humidity": [60, 60, 60, 60, 60, 60, 60, 60, 60, 60],
-        "Inside Humidity": [55, 55, 55, 55, 55, 55, 55, 55, 55, 55],
-        "Time": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    }
-)
-
-temperature = px.line(
-    data, x="Time", y=["Outside Temperature", "Inside Temperature"], markers=True
-)
-humidity = px.line(
-    data, x="Time", y=["Outside Humidity", "Inside Humidity"], markers=True
-)
-
-temperature.update_layout(
-    plot_bgcolor=colors["background"],
-    paper_bgcolor=colors["background"],
-    font_color=colors["text"],
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-)
-humidity.update_layout(
-    plot_bgcolor=colors["background"],
-    paper_bgcolor=colors["background"],
-    font_color=colors["text"],
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-)
 
 app.layout = html.Div(
     style={"backgroundColor": colors["background"]},
     children=[
         html.H1(
-            children=f"Hello Dash in 2022 from {'Dev Server' if debug else 'Prod Server'}",
+            children="Indoor/outdoor conditions for the past two weeks",
             style={"textAlign": "center", "color": colors["text"]},
         ),
         html.Div(id="live-update-text"),
-        dcc.Graph(id="temperature", figure=temperature),
-        dcc.Graph(id="humidity", figure=humidity),
+        dcc.Graph(id="plots"),
         dcc.Interval(
             id="interval-component",
-            interval=300 * 1000,  # in milliseconds
+            interval=3600 * 1000,  # in milliseconds
             n_intervals=0,
         ),
     ],

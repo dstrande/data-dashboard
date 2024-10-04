@@ -1,6 +1,7 @@
 import numpy as np
 import socket
 import time
+
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
@@ -112,7 +113,7 @@ def bulk_insert(table, adjusted_datetimes, temps, hums):
 
 
 def select_from(table):
-    with open("secrets.txt", "r") as file:
+    with open("docker-app/app/secrets.txt", "r") as file:
         creds = file.read().rstrip()
 
     try:
@@ -126,7 +127,22 @@ def select_from(table):
         print(error)
 
 
-UDP_IP = "10.0.0.83"  # Printed IP from the ESP32 serial monitor
-adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
-bulk_insert("inside", adjusted_datetimes, temps, hums)
+def clear_table(table):
+    with open("docker-app/app/secrets.txt", "r") as file:
+        creds = file.read().rstrip()
+
+    try:
+        with psycopg2.connect(creds) as conn:
+            with conn.cursor() as cur:
+                # execute the CREATE TABLE statement
+                cur.execute(f"TRUNCATE {table} RESTART IDENTITY;")
+                conn.commit()
+    except (psycopg2.DatabaseError, Exception) as error:
+        print(error)
+
+
+# UDP_IP = "10.0.0.83"  # Printed IP from the ESP32 serial monitor
+# adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
+# bulk_insert("inside", adjusted_datetimes, temps, hums)
 select_from("inside")
+# clear_table("inside")
