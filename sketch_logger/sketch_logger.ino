@@ -21,9 +21,9 @@ float temp; //Stores temperature value
 float i;
 unsigned long time_begin;
 unsigned long time_end;
-const unsigned long loop_time = 30;
-const unsigned long trans_time = 10;
-const unsigned long day = 300; // 86400
+const unsigned long loop_time = 300;
+const unsigned long trans_time = 60;
+const unsigned long day = 3600;
 unsigned long time1;
 unsigned long time0;
 String temps, hums, times, toSend;

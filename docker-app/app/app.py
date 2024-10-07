@@ -197,6 +197,10 @@ def update_metrics(n):
     adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
     bulk_insert("inside", adjusted_datetimes, temps, hums)
 
+    UDP_IP = "10.0.0.212"  # IP for outside
+    adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
+    bulk_insert("outside", adjusted_datetimes, temps, hums)
+
     style = {"padding": "5px", "fontSize": "16px", "color": colors["text"]}
     dttz = datetime.now(ZoneInfo("America/Vancouver"))
     print("Adj timez: ", dttz, "\n\n", flush=True)
@@ -209,6 +213,7 @@ def update_metrics(n):
 )
 def update_data(n):
     datetimes_inside, temps_inside, hums_inside = select_from("inside")
+    datetimes_outside, temps_outside, hums_outside = select_from("outside")
 
     fig = make_subplots(rows=2, cols=1)
 
@@ -226,19 +231,18 @@ def update_data(n):
         row=1,
         col=1,
         trace=go.Scatter(
-            x=datetimes_inside,
-            y=temps_inside - 1,
+            x=datetimes_outside,
+            y=temps_outside,
             name="Outside Temperature",
             mode="lines+markers",
         ),
     )
-
     fig.add_trace(
         row=2,
         col=1,
         trace=go.Scatter(
             x=datetimes_inside,
-            y=hums_inside - 1,
+            y=hums_inside,
             name="Inside Humidity",
             mode="lines+markers",
         ),
@@ -247,8 +251,8 @@ def update_data(n):
         row=2,
         col=1,
         trace=go.Scatter(
-            x=datetimes_inside,
-            y=hums_inside + 10,
+            x=datetimes_outside,
+            y=hums_outside,
             name="Outside Humidity",
             mode="lines+markers",
         ),
