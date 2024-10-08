@@ -115,29 +115,6 @@ def query_esp32(UDP_IP):
     return adjusted_datetimes, temps, hums
 
 
-def create_plot(adjusted_datetimes, temps, hums):
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-    fig.add_trace(
-        go.Scatter(
-            x=adjusted_datetimes,
-            y=temps,
-            mode="lines",
-        ),
-        secondary_y=False,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=adjusted_datetimes,
-            y=hums,
-            mode="lines",
-        ),
-        secondary_y=True,
-    )
-
-    fig.write_html("test.html")
-
-
 def bulk_insert(table, adjusted_datetimes, temps, hums):
     with open("secrets.txt", "r") as file:
         creds = file.read().rstrip()
@@ -178,8 +155,10 @@ def select_from(table):
         with psycopg2.connect(creds) as conn:
             with conn.cursor() as cur:
                 # execute the CREATE TABLE statement
-                cur.execute(f"""SELECT * FROM {table}
-                            WHERE times > CURRENT_DATE - INTERVAL '14 day';""")
+                cur.execute(
+                    f"""SELECT * FROM {table}
+                            WHERE times > CURRENT_DATE - INTERVAL '14 day';"""
+                )
                 results = pd.DataFrame(cur.fetchall())
                 print("results: ", results)
     except (psycopg2.DatabaseError, Exception) as error:
@@ -193,13 +172,13 @@ def select_from(table):
     Input("interval-component", "n_intervals"),
 )
 def update_metrics(n):
-    UDP_IP = "10.0.0.83"  # Printed IP from the ESP32 serial monitor for inside
-    adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
-    bulk_insert("inside", adjusted_datetimes, temps, hums)
-
     UDP_IP = "10.0.0.212"  # IP for outside
     adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
     bulk_insert("outside", adjusted_datetimes, temps, hums)
+
+    UDP_IP = "10.0.0.83"  # Printed IP from the ESP32 serial monitor for inside
+    adjusted_datetimes, temps, hums = query_esp32(UDP_IP)
+    bulk_insert("inside", adjusted_datetimes, temps, hums)
 
     style = {"padding": "5px", "fontSize": "16px", "color": colors["text"]}
     dttz = datetime.now(ZoneInfo("America/Vancouver"))
@@ -215,7 +194,12 @@ def update_data(n):
     datetimes_inside, temps_inside, hums_inside = select_from("inside")
     datetimes_outside, temps_outside, hums_outside = select_from("outside")
 
-    fig = make_subplots(rows=2, cols=1)
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+    )
 
     fig.add_trace(
         row=1,
