@@ -25,6 +25,11 @@ def select_from(table):
     except (psycopg2.DatabaseError, Exception) as error:
         print(error)
 
+    results = results[results[2] > -50]
+    results = results[results[2] < 100]
+    results = results[results[3] >= 0]
+    results = results[results[3] <= 100]
+
     return results[1], results[2], results[3]
 
 
