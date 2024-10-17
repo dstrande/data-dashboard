@@ -171,10 +171,32 @@ def update_data(n):
 
     fig.update_yaxes(title_text="Temperature (°C)", row=1, col=2)
     fig.update_yaxes(title_text="Humidity (%)", range=[0, 100], row=3, col=2)
-    fig.update_xaxes(title_text="Datetime", row=3, col=2)
+    fig.update_xaxes(
+        title_text="Datetime",
+        row=3,
+        col=2,
+    )
+    fig.update_xaxes(
+        row=1,
+        col=2,
+        rangeselector=dict(
+            buttons=list(
+                [
+                    dict(count=1, label="1d", step="day", stepmode="backward"),
+                    dict(count=2, label="2d", step="day", stepmode="backward"),
+                    dict(count=7, label="7d", step="day", stepmode="backward"),
+                    dict(step="all"),
+                ]
+            )
+        ),
+    )
+
     fig.update_layout(
         height=1000,
         template="plotly_dark",
+        xaxis_rangeselector_font_color="black",
+        xaxis_rangeselector_activecolor="grey",
+        xaxis_rangeselector_bgcolor="darkgray",
         margin=dict(t=10, l=10, b=10, r=10),
         legend=dict(
             orientation="h",
@@ -189,6 +211,12 @@ def update_data(n):
             "xaxis": {"matches": None},
             "xaxis2": {"matches": "x", "showticklabels": True},
         }
+    )
+    fig.update_layout(
+        xaxis_range=[
+            datetimes_inside.iloc[0] - pd.Timedelta(hours=1),
+            datetimes_inside.iloc[-1] + pd.Timedelta(hours=1),
+        ],
     )
 
     return fig
