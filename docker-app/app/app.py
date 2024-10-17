@@ -9,6 +9,19 @@ from plotly.subplots import make_subplots
 
 
 def select_from(table):
+    """Used for querying the specified server.
+
+    Retrieves data from the server and filters out any unrealistic data points.
+
+    Returns
+    -------
+    dateframe
+        The dateframe containing datetime data.
+    dateframe
+        The dateframe containing temeprature data
+    dateframe
+        The dateframe containing humidity data.
+    """
     with open("secrets.txt", "r") as file:
         creds = file.read().rstrip()
 
@@ -18,7 +31,8 @@ def select_from(table):
                 # execute the CREATE TABLE statement
                 cur.execute(
                     f"""SELECT * FROM {table}
-                            WHERE times > CURRENT_DATE - INTERVAL '14 day';"""
+                            WHERE times > CURRENT_DATE - INTERVAL '14 day'
+                            AND times > CAST('2024-10-05' AS DATE);"""
                 )
                 results = pd.DataFrame(cur.fetchall())
                 print("results: ", results)
@@ -38,29 +52,41 @@ def select_from(table):
     Input("interval-component", "n_intervals"),
 )
 def update_data(n):
+    """Updates the data using the postgreSQL server.
+
+    Queries the server for inside and outside datasets. Creates the figure that
+    will be plotted on the server.
+
+    Returns
+    -------
+    fig
+        The plotly figure to plot
+    """
     datetimes_inside, temps_inside, hums_inside = select_from("inside")
     datetimes_outside, temps_outside, hums_outside = select_from("outside")
 
     fig = make_subplots(
         rows=4,
-        cols=4,
-        shared_xaxes=True,
+        cols=5,
+        shared_xaxes="all",
         vertical_spacing=0.05,
         specs=[
             [
                 {"type": "indicator"},
-                {"type": "scatter", "rowspan": 2, "colspan": 3},
+                {"type": "scatter", "rowspan": 2, "colspan": 4},
+                None,
                 None,
                 None,
             ],
-            [{"type": "indicator"}, None, None, None],
+            [{"type": "indicator"}, None, None, None, None],
             [
                 {"type": "indicator"},
-                {"type": "scatter", "rowspan": 2, "colspan": 3},
+                {"type": "scatter", "rowspan": 2, "colspan": 4},
+                None,
                 None,
                 None,
             ],
-            [{"type": "indicator"}, None, None, None],
+            [{"type": "indicator"}, None, None, None, None],
         ],
     )
 
@@ -158,6 +184,13 @@ def update_data(n):
             x=1,
         ),
     )
+    fig.update_layout(
+        {
+            "xaxis": {"matches": None},
+            "xaxis2": {"matches": "x", "showticklabels": True},
+        }
+    )
+
     return fig
 
 

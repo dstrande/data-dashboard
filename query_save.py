@@ -11,6 +11,18 @@ import numpy as np
 
 
 def to_array(data):
+    """Takes data string from esp32 and converts to an array.
+
+    Parameters
+    ----------
+    data : str
+        The raw data string from the esp32.
+
+    Returns
+    -------
+    data : array
+        Data now seperated into an array.
+    """
     data = data.split(",")
     data = np.array(data[1:-1]).astype(float)
     return data
@@ -48,7 +60,7 @@ def query_esp32(UDP_IP):
     Returns
     -------
     adjusted_datetimes : array
-        Datetime array for each measurement containing timezone information.
+        Datetime array for each measurement without timezone information.
     temps : array
         Array of measured temperatures (Celsius).
     hums : array
@@ -96,6 +108,22 @@ def query_esp32(UDP_IP):
 
 
 def bulk_insert(table, adjusted_datetimes, temps, hums):
+    """Inserts data in the postgreSQL server.
+
+    Additionally, uses the to_timezone function to convert the datetime to
+    datetime with timezone.
+
+    Parameters
+    ----------
+    table : str
+        The name of the table to insert the data into.
+    adjusted_datetimes : array
+        Datetime array for each measurement without timezone information.
+    temps : array
+        Array of measured temperatures (Celsius).
+    hums : array
+        Array of measured humidities (%).
+    """
     with open("secrets.txt", "r") as file:
         creds = file.read().rstrip()
 
@@ -104,7 +132,7 @@ def bulk_insert(table, adjusted_datetimes, temps, hums):
         "temperature": temps,
         "humidity": hums,
     }
-    df = pd.DataFrame(df)  # .iloc[::-1]
+    df = pd.DataFrame(df)
     df["times"] = df["times"].dt.tz_localize("utc").apply(to_timezone)
 
     try:
@@ -123,20 +151,6 @@ def bulk_insert(table, adjusted_datetimes, temps, hums):
                     print("Error: %s" % error)
                     conn.rollback()
                 print("execute_batch done")
-    except (psycopg2.DatabaseError, Exception) as error:
-        print(error)
-
-
-def clear_table(table):
-    with open("secrets.txt", "r") as file:
-        creds = file.read().rstrip()
-
-    try:
-        with psycopg2.connect(creds) as conn:
-            with conn.cursor() as cur:
-                # execute the CREATE TABLE statement
-                cur.execute(f"TRUNCATE {table} RESTART IDENTITY;")
-                conn.commit()
     except (psycopg2.DatabaseError, Exception) as error:
         print(error)
 
