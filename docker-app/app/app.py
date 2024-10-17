@@ -240,7 +240,7 @@ app.layout = html.Div(
         dcc.Graph(id="plots"),
         dcc.Interval(
             id="interval-component",
-            interval=300 * 1000,  # in milliseconds
+            interval=15 * 60 * 1000,  # in milliseconds
             n_intervals=0,
         ),
     ],
