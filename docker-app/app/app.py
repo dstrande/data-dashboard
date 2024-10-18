@@ -2,8 +2,9 @@ import os
 import pandas as pd
 import psycopg2
 from flask import Flask
+from datetime import datetime
 
-from dash import Dash, html, dcc, Input, Output, callback
+from dash import Dash, html, dcc, Input, Output, callback, State
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -229,22 +230,69 @@ debug = False if os.environ["DASH_DEBUG_MODE"] == "False" else True
 
 colors = {"background": "#111111", "text": "#7FDBFF"}
 
+# app.layout = html.Div(
+#     style={"backgroundColor": colors["background"]},
+#     children=[
+#         html.H1(
+#             children="Indoor/outdoor conditions for the past two weeks",
+#             style={"textAlign": "center", "color": colors["text"]},
+#         ),
+#         # html.Div(id="live-update-text"),
+#         dcc.Graph(id="plots"),
+#         dcc.Interval(
+#             id="interval-component",
+#             interval=15 * 60 * 1000,  # in milliseconds
+#             n_intervals=0,
+#         ),
+#     ],
+# )
+
+
 app.layout = html.Div(
-    style={"backgroundColor": colors["background"]},
-    children=[
-        html.H1(
-            children="Indoor/outdoor conditions for the past two weeks",
-            style={"textAlign": "center", "color": colors["text"]},
+    [
+        html.H1("Dash Tabs component demo"),
+        dcc.Tabs(
+            id="tabs-example-graph",
+            value="tab-1-example-graph",
+            children=[
+                dcc.Tab(label="Tab One", value="tab-1-example-graph"),
+                dcc.Tab(label="Tab Two", value="tab-2-example-graph"),
+            ],
         ),
-        # html.Div(id="live-update-text"),
-        dcc.Graph(id="plots"),
+        html.Div(id="tabs-content-example-graph"),
         dcc.Interval(
             id="interval-component",
             interval=15 * 60 * 1000,  # in milliseconds
             n_intervals=0,
         ),
+        html.Div(id="plots", style={"display": "none"}),
     ],
+    style={"backgroundColor": colors["background"]},
 )
+
+
+@callback(
+    Output("tabs-content-example-graph", "children"),
+    Input("tabs-example-graph", "value"),
+)
+def render_content(tab):
+    if tab == "tab-1-example-graph":
+        return html.Div(
+            [
+                html.H3("Tab content 1"),
+                dcc.Graph(id="plots"),
+            ]
+        )
+    elif tab == "tab-2-example-graph":
+        return html.Div(
+            [
+                html.H3("Tab content 2"),
+                dcc.Graph(
+                    id="graph-2-tabs-dcc",
+                    figure={"data": [{"x": [1, 2, 3], "y": [5, 10, 6], "type": "bar"}]},
+                ),
+            ]
+        )
 
 
 if __name__ == "__main__":
